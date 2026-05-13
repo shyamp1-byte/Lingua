@@ -1,0 +1,105 @@
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  width: 100%;
+  height: 100%;
+  background: transparent;
+}
+
+/* ── Waveform bars ── */
+.wave-bar {
+  width: 3px;
+  border-radius: 3px;
+  background: #2e2924;
+  height: 5px;
+  transition: background 0.4s ease;
+}
+.wave-bar--active {
+  background: #c8923a;
+  animation: wave 0.7s ease-in-out infinite alternate;
+}
+@keyframes wave {
+  0%   { height: 4px; }
+  100% { height: 22px; }
+}
+
+/* ── Status pulse ring ── */
+.pulse-ring {
+  position: absolute;
+  inset: -5px;
+  border-radius: 50%;
+  border: 1.5px solid #5c8060;
+  animation: pulse-ring 1.8s ease-out infinite;
+  pointer-events: none;
+}
+@keyframes pulse-ring {
+  0%   { transform: scale(1); opacity: 0.7; }
+  100% { transform: scale(2.8); opacity: 0; }
+}
+
+/* ── Caption fade-up ── */
+.caption-in {
+  animation: fade-up 0.28s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+@keyframes fade-up {
+  from { opacity: 0; transform: translateY(7px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ── Skeleton shimmer ── */
+.skeleton {
+  border-radius: 5px;
+  background: linear-gradient(
+    90deg,
+    #1a1715 25%,
+    #2a2420 50%,
+    #1a1715 75%
+  );
+  background-size: 300% 100%;
+  animation: shimmer 1.6s infinite;
+}
+@keyframes shimmer {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+/* ── Caption box glow (active) ── */
+.caption-box--active {
+  box-shadow:
+    0 0 0 1px #c8923a44,
+    0 0 24px #c8923a18,
+    0 0 48px #c8923a0a;
+  border-color: #c8923a55 !important;
+  transition: box-shadow 0.4s ease, border-color 0.4s ease;
+}
+.caption-box {
+  transition: box-shadow 0.4s ease, border-color 0.4s ease;
+}
+
+/* ── Tab slider indicator ── */
+.tab-indicator {
+  position: absolute;
+  bottom: 4px;
+  left: 4px;
+  width: calc(50% - 4px);
+  height: calc(100% - 8px);
+  background: #242018;
+  border-radius: 7px;
+  transition: transform 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  pointer-events: none;
+}
+.tab-indicator--history {
+  transform: translateX(100%);
+}
+
+/* ── Scrollbar ── */
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #2e2924; border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: #4a4438; }

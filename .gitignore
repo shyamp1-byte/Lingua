@@ -1,0 +1,31 @@
+# Personal / machine-specific
+.claude/
+test.wav
+test16k.wav
+*.wav
+*.mp3
+*.m4a
+
+# Dependencies
+node_modules/
+
+# Env / secrets — NEVER commit
+.env
+.env.*
+!.env.example
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+*.egg-info/
+
+# Build artifacts
+dist/
+dist-ssr/
