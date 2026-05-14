@@ -445,9 +445,12 @@
         <div class="step-text">
           <strong>Download &amp; install</strong><br>
           Open the DMG and drag Lingua into your Applications folder.<br><br>
-          <span style="color:var(--text-dim)">First launch only:</span> macOS will say it can't verify the app.
-          <strong>Right-click Lingua → Open → click Open.</strong>
-          This is a one-time step for apps distributed outside the App Store.
+          <span style="color:var(--text-dim)">First launch only — macOS will block the app. Two ways to fix it:</span><br><br>
+          <strong>Option A (easiest) — Terminal:</strong><br>
+          <code style="display:inline-block;background:var(--bg);border:1px solid var(--border);border-radius:6px;padding:6px 10px;font-size:12px;color:var(--accent);margin:6px 0;">xattr -dr com.apple.quarantine /Applications/Lingua.app</code><br>
+          Then open Lingua normally. Warning gone permanently.<br><br>
+          <strong>Option B — System Settings:</strong><br>
+          Click Done on the warning → open <em>System Settings → Privacy &amp; Security</em> → scroll down → click <strong>Open Anyway</strong> → enter your Mac password.
         </div>
       </div>
       <div class="step">
