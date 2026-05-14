@@ -1,0 +1,112 @@
+name: Release
+
+# Trigger by pushing a version tag: git tag v0.2.0 && git push --tags
+on:
+  push:
+    tags: ["v*.*.*"]
+  workflow_dispatch:
+
+jobs:
+  release:
+    runs-on: macos-latest   # Apple Silicon (aarch64-apple-darwin)
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # ── Python sidecar ───────────────────────────────────────────────────
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Build sidecar binary
+        working-directory: server
+        run: |
+          pip install --quiet -r requirements.txt pyinstaller
+          pyinstaller lingua-server.spec
+          mkdir -p ../client/src-tauri/binaries
+          cp dist/lingua-server ../client/src-tauri/binaries/lingua-server-aarch64-apple-darwin
+          chmod +x ../client/src-tauri/binaries/lingua-server-aarch64-apple-darwin
+
+      # ── Rust / Node setup ────────────────────────────────────────────────
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust build
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "client/src-tauri -> target"
+
+      - name: Install frontend dependencies
+        run: npm install
+        working-directory: client
+
+      # ── Cargo config (screencapturekit rpath) ────────────────────────────
+      - name: Write .cargo/config.toml
+        run: |
+          mkdir -p client/src-tauri/.cargo
+          cat > client/src-tauri/.cargo/config.toml << 'EOF'
+          [target.aarch64-apple-darwin]
+          rustflags = [
+            "-C", "link-arg=-Wl,-rpath,/usr/lib/swift",
+          ]
+          EOF
+
+      # ── Code signing ─────────────────────────────────────────────────────
+      # Secrets required (add in repo Settings → Secrets → Actions):
+      #   APPLE_CERTIFICATE          — base64-encoded Developer ID .p12 file
+      #   APPLE_CERTIFICATE_PASSWORD — password for the .p12
+      #   KEYCHAIN_PASSWORD          — any strong password (used only during build)
+      #   APPLE_SIGNING_IDENTITY     — e.g. "Developer ID Application: Your Name (TEAMID)"
+      #   APPLE_ID                   — your Apple ID email
+      #   APPLE_PASSWORD             — app-specific password from appleid.apple.com
+      #   APPLE_TEAM_ID              — 10-char team ID from developer.apple.com
+      - name: Import signing certificate
+        if: ${{ secrets.APPLE_CERTIFICATE != '' }}
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+        run: |
+          CERT_PATH="$RUNNER_TEMP/certificate.p12"
+          KEYCHAIN_PATH="$RUNNER_TEMP/signing.keychain-db"
+          echo -n "$APPLE_CERTIFICATE" | base64 --decode -o "$CERT_PATH"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security import "$CERT_PATH" \
+            -P "$APPLE_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
+          security list-keychain -d user -s "$KEYCHAIN_PATH"
+
+      # ── Build & publish release ──────────────────────────────────────────
+      - name: Build and release
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        with:
+          projectPath: client
+          tagName: ${{ github.ref_name }}
+          releaseName: "Lingua ${{ github.ref_name }}"
+          releaseBody: |
+            ## What's new
+            See commit history for details.
+
+            ## Install
+            1. Download **Lingua_${{ github.ref_name }}_aarch64.dmg** below
+            2. Open the DMG and drag Lingua to Applications
+            3. Launch Lingua and enter your API keys in ⚙ Settings
+
+            **Requires:** macOS 12+ on Apple Silicon (M1 or later)
+          releaseDraft: true
+          prerelease: false

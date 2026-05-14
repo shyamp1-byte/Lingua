@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 function SkeletonLoader() {
   return (
@@ -78,13 +78,35 @@ function SessionCard({ session }: { session: Session }) {
   const [transcriptOpen, setTranscriptOpen] = useState(false);
   const [showOriginal, setShowOriginal] = useState(false);
   const [fullSession, setFullSession] = useState<Session | null>(null);
+  const [summaryPending, setSummaryPending] = useState(false);
+  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const stopPolling = () => {
+    if (pollRef.current) { clearInterval(pollRef.current); pollRef.current = null; }
+  };
+
+  useEffect(() => stopPolling, []); // cleanup on unmount
 
   const toggle = async () => {
     if (!open && !fullSession) {
       const res = await fetch(`${API}/sessions/${session.id}`);
       const fetched: Session = await res.json();
       setFullSession(fetched);
-      if (fetched.title && !fetched.title_en) {
+      // Transcript exists but no AI title yet → summary is generating
+      if (fetched.transcript && !fetched.title) {
+        setSummaryPending(true);
+        pollRef.current = setInterval(async () => {
+          const r = await fetch(`${API}/sessions/${session.id}`);
+          const updated: Session = await r.json();
+          if (updated.title) {
+            setFullSession(updated);
+            setSummaryPending(false);
+            stopPolling();
+          }
+        }, 3000);
+        // Give up after 45s (summary may fail or key absent)
+        setTimeout(() => { setSummaryPending(false); stopPolling(); }, 45000);
+      } else if (fetched.title && !fetched.title_en) {
         fetch(`${API}/sessions/${session.id}/regenerate`, { method: "POST" })
           .then((r) => r.json())
           .then((updated: Session) => setFullSession(updated))
@@ -179,7 +201,12 @@ function SessionCard({ session }: { session: Session }) {
             </div>
           )}
 
-          {fetched && !hasAI && (
+          {fetched && !hasAI && summaryPending && (
+            <p style={{ color: C.textMuted, fontSize: 12, fontStyle: "italic", margin: "12px 0 0" }}>
+              Preparing summary…
+            </p>
+          )}
+          {fetched && !hasAI && !summaryPending && (
             <p style={{ color: C.textMuted, fontSize: 12, fontStyle: "italic", margin: "12px 0 0" }}>
               AI summary not available — add OPENAI_API_KEY to .env to enable
             </p>

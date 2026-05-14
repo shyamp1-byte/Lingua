@@ -1,16 +1,22 @@
 import { useState, useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
+import { emit, listen } from "@tauri-apps/api/event";
 import {
   getAllWindows,
   primaryMonitor,
   LogicalPosition,
   LogicalSize,
+  PhysicalPosition,
 } from "@tauri-apps/api/window";
+import { register, unregister } from "@tauri-apps/plugin-global-shortcut";
 import { useSessionStore } from "../store/session";
 import LanguageSelector from "./LanguageSelector";
 import History from "./History";
+import Settings from "./Settings";
 import type { CaptionEvent } from "../types";
+
+const OVERLAY_POS_KEY = "lingua_overlay_pos";
+const HOTKEY = "CommandOrControl+Shift+L";
 
 type Tab = "live" | "history";
 
@@ -52,8 +58,17 @@ export default function ControlPanel() {
     useSessionStore();
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>("live");
+  const [overlayMoving, setOverlayMoving] = useState(false);
+  const [showSettings, setShowSettings] = useState(false);
+  const overlayMovingRef = useRef(false);
   const captionKey = useRef(0);
   const prevCaption = useRef<string | null>(null);
+  const statusRef = useRef(status);
+  const targetLanguageRef = useRef(targetLanguage);
+
+  useEffect(() => { statusRef.current = status; }, [status]);
+  useEffect(() => { targetLanguageRef.current = targetLanguage; }, [targetLanguage]);
+  useEffect(() => { overlayMovingRef.current = overlayMoving; }, [overlayMoving]);
 
   const isActive = status === "active";
   const displayText = partialCaption ?? caption?.original ?? null;
@@ -63,6 +78,25 @@ export default function ControlPanel() {
     prevCaption.current = caption?.original ?? null;
     captionKey.current += 1;
   }
+
+  // Auto-open settings on first launch (no Deepgram key stored)
+  useEffect(() => {
+    invoke<{ deepgram_api_key: string }>("get_settings").then((k) => {
+      if (!k.deepgram_api_key) setShowSettings(true);
+    }).catch(() => {});
+  }, []);
+
+  // Global hotkey: Cmd+Shift+L toggles captions from any app
+  useEffect(() => {
+    register(HOTKEY, () => {
+      if (statusRef.current === "active") {
+        handleStop();
+      } else {
+        handleStart();
+      }
+    }).catch((e) => console.error("[hotkey] register failed:", e));
+    return () => { unregister(HOTKEY).catch(() => {}); };
+  }, []);
 
   useEffect(() => {
     const unlisteners = [
@@ -95,20 +129,34 @@ export default function ControlPanel() {
       const wins = await getAllWindows();
       const overlay = wins.find((w) => w.label === "overlay");
       if (overlay) {
-        const monitor = await primaryMonitor();
-        if (monitor) {
-          const scale = monitor.scaleFactor;
-          const logW = monitor.size.width / scale;
-          const logH = monitor.size.height / scale;
-          const overlayH = 160;
-          const marginBottom = 40;
-          await overlay.setSize(new LogicalSize(logW, overlayH));
-          await overlay.setPosition(new LogicalPosition(0, logH - overlayH - marginBottom));
+        const saved = localStorage.getItem(OVERLAY_POS_KEY);
+        if (saved) {
+          try {
+            const { x, y, w, h } = JSON.parse(saved);
+            const monitor = await primaryMonitor();
+            const scale = monitor?.scaleFactor ?? 1;
+            await overlay.setSize(new LogicalSize(w / scale, h / scale));
+            await overlay.setPosition(new PhysicalPosition(x, y));
+          } catch {
+            // fall through to default positioning
+          }
+        }
+        if (!saved) {
+          const monitor = await primaryMonitor();
+          if (monitor) {
+            const scale = monitor.scaleFactor;
+            const logW = monitor.size.width / scale;
+            const logH = monitor.size.height / scale;
+            const overlayH = 160;
+            const marginBottom = 40;
+            await overlay.setSize(new LogicalSize(logW, overlayH));
+            await overlay.setPosition(new LogicalPosition(0, logH - overlayH - marginBottom));
+          }
         }
         await overlay.setIgnoreCursorEvents(true);
         await overlay.show();
       }
-      await invoke("start_capture", { targetLanguage });
+      await invoke("start_capture", { targetLanguage: targetLanguageRef.current });
     } catch (e) {
       setError(String(e));
     }
@@ -120,7 +168,25 @@ export default function ControlPanel() {
     useSessionStore.getState().setPartialCaption(null);
     const wins = await getAllWindows();
     const overlay = wins.find((w) => w.label === "overlay");
-    await overlay?.hide();
+    if (overlay) {
+      // Exit drag mode if active before hiding
+      if (overlayMovingRef.current) {
+        setOverlayMoving(false);
+        await emit("overlay_drag_mode", { enabled: false });
+        await overlay.setIgnoreCursorEvents(true);
+      }
+      await overlay.hide();
+    }
+  };
+
+  const toggleOverlayMove = async () => {
+    const wins = await getAllWindows();
+    const overlay = wins.find((w) => w.label === "overlay");
+    if (!overlay) return;
+    const entering = !overlayMoving;
+    setOverlayMoving(entering);
+    await emit("overlay_drag_mode", { enabled: entering });
+    // Overlay.tsx handles setIgnoreCursorEvents on itself via the event
   };
 
   return (
@@ -150,8 +216,25 @@ export default function ControlPanel() {
             Lingua
           </h1>
 
-          <div style={{ marginLeft: "auto" }}>
+          <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 10 }}>
             <Waveform active={isActive} />
+            <button
+              onClick={() => setShowSettings((s) => !s)}
+              title="Settings"
+              style={{
+                background: showSettings ? `${C.accent}22` : "none",
+                border: "none",
+                color: showSettings ? C.accent : C.textMuted,
+                cursor: "pointer",
+                fontSize: 16,
+                padding: "2px 4px",
+                borderRadius: 6,
+                lineHeight: 1,
+                transition: "color 0.2s, background 0.2s",
+              }}
+            >
+              ⚙
+            </button>
           </div>
         </div>
 
@@ -198,7 +281,12 @@ export default function ControlPanel() {
 
       {/* Content */}
       <div style={{ padding: "0 28px 28px", flex: 1, overflowY: "auto" }}>
-        {tab === "live" ? (
+        {showSettings ? (
+          <Settings
+            onBack={() => setShowSettings(false)}
+            onSaved={() => setShowSettings(false)}
+          />
+        ) : tab === "live" ? (
           <>
             <LanguageSelector />
 
@@ -272,11 +360,17 @@ export default function ControlPanel() {
               {isActive && !displayText && (
                 <span style={{ color: C.textSec, fontSize: 14 }}>Listening…</span>
               )}
+              {/* Previous final (dimmed) while next sentence builds */}
+              {partialCaption && prevCaption.current && (
+                <div style={{ color: C.textSec, fontSize: 14, opacity: 0.55, marginBottom: 10 }}>
+                  {prevCaption.current}
+                </div>
+              )}
               {displayText && (
                 <>
                   <div
                     key={`orig-${captionKey.current}`}
-                    className="caption-in"
+                    className={partialCaption ? undefined : "caption-in"}
                     style={{ color: C.text, fontSize: 15 }}
                   >
                     {displayText}
@@ -297,6 +391,28 @@ export default function ControlPanel() {
                 </>
               )}
             </div>
+
+            {isActive && (
+              <button
+                onClick={toggleOverlayMove}
+                style={{
+                  marginTop: 14,
+                  width: "100%",
+                  padding: "9px 0",
+                  fontSize: 13,
+                  fontWeight: 600,
+                  borderRadius: 8,
+                  border: `1px solid ${overlayMoving ? C.accent : C.border}`,
+                  background: overlayMoving ? `${C.accent}18` : "transparent",
+                  color: overlayMoving ? C.accent : C.textSec,
+                  cursor: "pointer",
+                  letterSpacing: 0.3,
+                  transition: "background 0.2s, color 0.2s, border-color 0.2s",
+                }}
+              >
+                {overlayMoving ? "✓  Done moving" : "⠿  Move overlay"}
+              </button>
+            )}
 
             {detectedLanguage && (
               <div style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 14 }}>

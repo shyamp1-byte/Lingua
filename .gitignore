@@ -29,3 +29,15 @@ venv/
 # Build artifacts
 dist/
 dist-ssr/
+
+# Local Cargo config (machine-specific rpaths)
+client/src-tauri/.cargo/
+
+# Sidecar binaries (built by CI or locally via PyInstaller)
+client/src-tauri/binaries/*
+!client/src-tauri/binaries/.gitkeep
+
+# PyInstaller output
+server/dist/
+server/build/
+server/*.spec.bak

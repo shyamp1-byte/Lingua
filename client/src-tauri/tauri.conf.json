@@ -43,9 +43,11 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "externalBin": ["binaries/lingua-server"],
     "macOS": {
       "entitlements": "./Entitlements.plist",
-      "infoPlist": "./InfoExtra.plist"
+      "infoPlist": "./InfoExtra.plist",
+      "minimumSystemVersion": "12.0"
     },
     "icon": [
       "icons/32x32.png",
