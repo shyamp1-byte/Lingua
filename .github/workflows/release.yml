@@ -36,6 +36,9 @@ jobs:
         with:
           node-version: 20
 
+      - name: Remove Homebrew rustup (avoids PATH conflict with real cargo)
+        run: brew unlink rustup 2>/dev/null || true
+
       - name: Set up Rust
         uses: dtolnay/rust-toolchain@stable
 
