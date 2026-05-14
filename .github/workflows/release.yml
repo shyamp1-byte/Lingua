@@ -60,12 +60,13 @@ jobs:
           EOF
 
       # ── Code signing ─────────────────────────────────────────────────────
-      # Secrets required (add in repo Settings → Secrets → Actions):
-      #   APPLE_CERTIFICATE          — base64-encoded Developer ID .p12 file
-      #   APPLE_CERTIFICATE_PASSWORD — password for the .p12
-      #   KEYCHAIN_PASSWORD          — any strong password (used only during build)
-      #   APPLE_SIGNING_IDENTITY     — e.g. "Developer ID Application: Your Name (TEAMID)"
-      #   APPLE_ID                   — your Apple ID email
+      # To enable signing + notarization, add these secrets in
+      # repo Settings → Secrets → Actions:
+      #   APPLE_CERTIFICATE          — base64-encoded Developer ID .p12
+      #   APPLE_CERTIFICATE_PASSWORD — .p12 password
+      #   KEYCHAIN_PASSWORD          — any strong password (build-time only)
+      #   APPLE_SIGNING_IDENTITY     — "Developer ID Application: Name (TEAMID)"
+      #   APPLE_ID                   — Apple ID email
       #   APPLE_PASSWORD             — app-specific password from appleid.apple.com
       #   APPLE_TEAM_ID              — 10-char team ID from developer.apple.com
       - name: Import signing certificate
@@ -75,7 +76,7 @@ jobs:
           KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
         run: |
           if [ -z "$APPLE_CERTIFICATE" ]; then
-            echo "No certificate secret set — building unsigned"
+            echo "No certificate configured — building unsigned (ad-hoc)"
             exit 0
           fi
           CERT_PATH="$RUNNER_TEMP/certificate.p12"
@@ -88,14 +89,20 @@ jobs:
             -P "$APPLE_CERTIFICATE_PASSWORD" -A -t cert -f pkcs12 -k "$KEYCHAIN_PATH"
           security list-keychain -d user -s "$KEYCHAIN_PATH"
 
-      # ── Resolve signing identity ─────────────────────────────────────────
-      # Default to "-" (ad-hoc) when no Developer ID certificate is configured.
-      # Ad-hoc signing avoids the empty-identity codesign failure while still
-      # producing a runnable app (users right-click → Open on first launch).
-      - name: Resolve signing identity
+      # Resolve all Apple env vars here so the build step never sees empty strings.
+      # Empty APPLE_SIGNING_IDENTITY → "-" (ad-hoc, no cert needed).
+      # Empty APPLE_TEAM_ID → skip notarization entirely.
+      - name: Resolve Apple env vars
         run: |
           IDENTITY="${{ secrets.APPLE_SIGNING_IDENTITY }}"
           echo "APPLE_SIGNING_IDENTITY=${IDENTITY:--}" >> "$GITHUB_ENV"
+
+          TEAM_ID="${{ secrets.APPLE_TEAM_ID }}"
+          if [ -n "$TEAM_ID" ]; then
+            echo "APPLE_ID=${{ secrets.APPLE_ID }}"       >> "$GITHUB_ENV"
+            echo "APPLE_PASSWORD=${{ secrets.APPLE_PASSWORD }}" >> "$GITHUB_ENV"
+            echo "APPLE_TEAM_ID=$TEAM_ID"                 >> "$GITHUB_ENV"
+          fi
 
       # ── Build & publish release ──────────────────────────────────────────
       - name: Build and release
@@ -103,22 +110,20 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           APPLE_SIGNING_IDENTITY: ${{ env.APPLE_SIGNING_IDENTITY }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          # APPLE_ID / APPLE_PASSWORD / APPLE_TEAM_ID are set via GITHUB_ENV
+          # only when all three secrets are present — omitting them prevents
+          # Tauri from attempting notarization with empty credentials.
         with:
           projectPath: client
           tagName: ${{ github.ref_name }}
           releaseName: "Lingua ${{ github.ref_name }}"
           releaseBody: |
-            ## What's new
-            See commit history for details.
-
             ## Install
             1. Download **Lingua_${{ github.ref_name }}_aarch64.dmg** below
-            2. Open the DMG and drag Lingua to Applications
-            3. Launch Lingua and enter your API keys in ⚙ Settings
+            2. Open the DMG → drag Lingua to Applications
+            3. **First launch:** right-click Lingua → Open → click Open (one-time Gatekeeper step)
+            4. Enter your API keys in ⚙ Settings → click Save
 
-            **Requires:** macOS 12+ on Apple Silicon (M1 or later)
+            **Requires:** macOS 12+ · Apple Silicon (M1 or later)
           releaseDraft: true
           prerelease: false
