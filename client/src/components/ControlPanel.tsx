@@ -1,5 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { check as checkUpdate, type Update } from "@tauri-apps/plugin-updater";
+import { relaunch } from "@tauri-apps/plugin-process";
 import { emit, listen } from "@tauri-apps/api/event";
 import {
   getAllWindows,
@@ -60,6 +62,8 @@ export default function ControlPanel() {
   const [tab, setTab] = useState<Tab>("live");
   const [overlayMoving, setOverlayMoving] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
+  const [pendingUpdate, setPendingUpdate] = useState<Update | null>(null);
+  const [updating, setUpdating] = useState(false);
   const overlayMovingRef = useRef(false);
   const captionKey = useRef(0);
   const prevCaption = useRef<string | null>(null);
@@ -78,6 +82,11 @@ export default function ControlPanel() {
     prevCaption.current = caption?.original ?? null;
     captionKey.current += 1;
   }
+
+  // Check for updates on launch (silent — only shows banner if one is available)
+  useEffect(() => {
+    checkUpdate().then((u) => { if (u) setPendingUpdate(u); }).catch(() => {});
+  }, []);
 
   // Auto-open settings on first launch (no Deepgram key stored)
   useEffect(() => {
@@ -199,6 +208,45 @@ export default function ControlPanel() {
       display: "flex",
       flexDirection: "column",
     }}>
+      {/* Update banner */}
+      {pendingUpdate && (
+        <div style={{
+          background: `${C.accent}18`,
+          borderBottom: `1px solid ${C.accent}44`,
+          padding: "10px 28px",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 12,
+        }}>
+          <span style={{ fontSize: 12, color: C.accent }}>
+            Update {pendingUpdate.version} available
+          </span>
+          <button
+            onClick={async () => {
+              setUpdating(true);
+              await pendingUpdate.downloadAndInstall();
+              await relaunch();
+            }}
+            disabled={updating}
+            style={{
+              background: C.accent,
+              border: "none",
+              borderRadius: 6,
+              color: "#fff",
+              fontSize: 11,
+              fontWeight: 700,
+              padding: "5px 12px",
+              cursor: updating ? "default" : "pointer",
+              opacity: updating ? 0.7 : 1,
+              letterSpacing: 0.3,
+            }}
+          >
+            {updating ? "Installing…" : "Install & restart"}
+          </button>
+        </div>
+      )}
+
       {/* Header */}
       <div style={{ padding: "28px 28px 0" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 4 }}>

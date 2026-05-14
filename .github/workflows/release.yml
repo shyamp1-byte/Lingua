@@ -110,6 +110,8 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           APPLE_SIGNING_IDENTITY: ${{ env.APPLE_SIGNING_IDENTITY }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
           # APPLE_ID / APPLE_PASSWORD / APPLE_TEAM_ID are set via GITHUB_ENV
           # only when all three secrets are present — omitting them prevents
           # Tauri from attempting notarization with empty credentials.

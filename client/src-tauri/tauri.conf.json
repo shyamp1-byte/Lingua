@@ -40,6 +40,14 @@
       "csp": null
     }
   },
+  "plugins": {
+    "updater": {
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDU0MTkzRkQ0NTQ4RUY4REUKUldUZStJNVUxRDhaVkU1ZFYvdGZRTWdNRW9Peld5UHNhR1d0cFZYbUR2TjFZM2NxNkMzMjM3dW0K",
+      "endpoints": [
+        "https://github.com/shyamp1-byte/Lingua/releases/latest/download/latest.json"
+      ]
+    }
+  },
   "bundle": {
     "active": true,
     "targets": "all",
