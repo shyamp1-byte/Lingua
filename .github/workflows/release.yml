@@ -69,12 +69,15 @@ jobs:
       #   APPLE_PASSWORD             — app-specific password from appleid.apple.com
       #   APPLE_TEAM_ID              — 10-char team ID from developer.apple.com
       - name: Import signing certificate
-        if: ${{ secrets.APPLE_CERTIFICATE != '' }}
         env:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
           KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
         run: |
+          if [ -z "$APPLE_CERTIFICATE" ]; then
+            echo "No certificate secret set — building unsigned"
+            exit 0
+          fi
           CERT_PATH="$RUNNER_TEMP/certificate.p12"
           KEYCHAIN_PATH="$RUNNER_TEMP/signing.keychain-db"
           echo -n "$APPLE_CERTIFICATE" | base64 --decode -o "$CERT_PATH"
