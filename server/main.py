@@ -11,6 +11,8 @@ def _patched_create_default_context(purpose=ssl.Purpose.SERVER_AUTH, *, cafile=N
 
 ssl.create_default_context = _patched_create_default_context
 
+import asyncio
+import json
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, WebSocket
@@ -18,12 +20,28 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.ws import caption_ws
 from app.api.sessions import router as sessions_router
-from app.services.storage.db import init_db
+from app.services.storage.db import init_db, get_sessions_without_embeddings, update_session
+from app.core.config import settings
+
+
+async def _backfill_embeddings() -> None:
+    if not settings.openai_api_key:
+        return
+    from app.services.ai.embedder import embed_text
+    sessions = await get_sessions_without_embeddings()
+    for s in sessions:
+        try:
+            vec = await embed_text(s["transcript"], settings.openai_api_key)
+            await update_session(s["id"], embedding=json.dumps(vec))
+            print(f"[backfill] embedded session {s['id']}")
+        except Exception as e:
+            print(f"[backfill] failed for session {s['id']}: {e}")
 
 
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     await init_db()
+    asyncio.create_task(_backfill_embeddings())
     yield
 
 

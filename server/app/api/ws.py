@@ -10,6 +10,7 @@ from app.services.speech.deepgram_client import DeepgramSTTService
 from app.services.translation.deepl_client import DeepLTranslationService
 from app.services.storage import db
 from app.services.ai import summarizer
+from app.services.ai.embedder import embed_text
 
 _THROTTLE_S = 0.35
 _TRAIL_DEBOUNCE_S = 0.18
@@ -34,6 +35,16 @@ async def _finalize_session(session_id: int, transcript: str, transcript_transla
 
     if transcript and settings.openai_api_key:
         asyncio.create_task(_generate_summary(session_id, transcript, target_lang))
+        asyncio.create_task(_generate_embedding(session_id, transcript))
+
+
+async def _generate_embedding(session_id: int, transcript: str) -> None:
+    try:
+        vec = await embed_text(transcript, settings.openai_api_key)
+        await db.update_session(session_id, embedding=json.dumps(vec))
+        print(f"[session] embedding ready for id={session_id}")
+    except Exception as e:
+        print(f"[session] embedding failed for id={session_id}: {e}")
 
 
 async def _generate_summary(session_id: int, transcript: str, target_lang: str = "en") -> None:

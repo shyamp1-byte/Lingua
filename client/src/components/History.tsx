@@ -201,12 +201,12 @@ function SessionCard({ session }: { session: Session }) {
             </div>
           )}
 
-          {fetched && !hasAI && summaryPending && (
+          {fetched && data.transcript && !hasAI && summaryPending && (
             <p style={{ color: C.textMuted, fontSize: 12, fontStyle: "italic", margin: "12px 0 0" }}>
               Preparing summary…
             </p>
           )}
-          {fetched && !hasAI && !summaryPending && (
+          {fetched && data.transcript && !hasAI && !summaryPending && (
             <p style={{ color: C.textMuted, fontSize: 12, fontStyle: "italic", margin: "12px 0 0" }}>
               AI summary not available — add OPENAI_API_KEY to .env to enable
             </p>
@@ -279,6 +279,10 @@ export default function History() {
   const [sessionDates, setSessionDates] = useState<Set<string>>(new Set());
   const [sessions, setSessions] = useState<Session[]>([]);
   const [loading, setLoading] = useState(false);
+  const [query, setQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<(Session & { score: number })[]>([]);
+  const [searching, setSearching] = useState(false);
+  const searchTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     fetch(`${API}/sessions/dates`)
@@ -286,6 +290,20 @@ export default function History() {
       .then((dates: string[]) => setSessionDates(new Set(dates)))
       .catch(() => {});
   }, []);
+
+  useEffect(() => {
+    if (searchTimer.current) clearTimeout(searchTimer.current);
+    if (!query.trim()) { setSearchResults([]); setSearching(false); return; }
+    setSearching(true);
+    searchTimer.current = setTimeout(async () => {
+      try {
+        const r = await fetch(`${API}/sessions/search?q=${encodeURIComponent(query)}`);
+        setSearchResults(await r.json());
+      } catch {}
+      setSearching(false);
+    }, 400);
+    return () => { if (searchTimer.current) clearTimeout(searchTimer.current); };
+  }, [query]);
 
   useEffect(() => {
     setLoading(true);
@@ -311,9 +329,59 @@ export default function History() {
     return d.toLocaleDateString([], { weekday: "long", month: "long", day: "numeric" });
   };
 
+  const isSearching = query.trim().length > 0;
+
   return (
     <div style={{ padding: "0 2px" }}>
+      {/* Search box */}
+      <div style={{ position: "relative", marginBottom: 16 }}>
+        <input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder="Search sessions…"
+          style={{
+            width: "100%", boxSizing: "border-box",
+            background: C.surface,
+            border: `1px solid ${isSearching ? C.accent : C.border}`,
+            borderRadius: 10, padding: "10px 36px 10px 14px",
+            color: C.text, fontSize: 13, outline: "none",
+            transition: "border-color 0.2s",
+            fontFamily: "inherit",
+          }}
+        />
+        {isSearching && (
+          <button
+            onClick={() => { setQuery(""); setSearchResults([]); }}
+            style={{
+              position: "absolute", right: 10, top: "50%",
+              transform: "translateY(-50%)",
+              background: "none", border: "none",
+              color: C.textMuted, cursor: "pointer", fontSize: 16, lineHeight: 1,
+            }}
+          >×</button>
+        )}
+      </div>
+
+      {/* Search results */}
+      {isSearching && (
+        <>
+          {searching && <SkeletonLoader />}
+          {!searching && searchResults.map((s) => (
+            <div key={s.id} style={{ position: "relative" }}>
+              <div style={{
+                position: "absolute", top: 10, right: 12,
+                fontSize: 10, color: C.accentDim, fontWeight: 600,
+              }}>
+                {Math.round(s.score * 100)}% match
+              </div>
+              <SessionCard session={s} />
+            </div>
+          ))}
+        </>
+      )}
+
       {/* Calendar */}
+      {!isSearching && (<>
       <div style={{
         background: C.surface, borderRadius: 12, padding: "14px 16px",
         marginBottom: 16, border: `1px solid ${C.border}`,
@@ -388,6 +456,7 @@ export default function History() {
       )}
 
       {sessions.map((s) => <SessionCard key={s.id} session={s} />)}
+      </>)}
     </div>
   );
 }

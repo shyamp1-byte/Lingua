@@ -32,6 +32,7 @@ Or: System Settings → Privacy & Security → Open Anyway.
 - **Session history** — every session is saved locally with start time, duration, and word count
 - **AI summaries** — GPT-4o-mini generates a title, 2–3 sentence summary, and key bullet points in your chosen language, with a toggle to English
 - **Full transcripts** — original and translated text stored per session, accessible from the history calendar
+- **Semantic search** — search across all past sessions using natural language; powered by OpenAI `text-embedding-3-small` embeddings with cosine similarity (RAG over local session history)
 - **Zero cloud storage** — all data lives in `~/.lingua/` on your machine
 
 ---
@@ -46,6 +47,7 @@ Or: System Settings → Privacy & Security → Open Anyway.
 | Speech-to-text | [Deepgram Nova-3](https://deepgram.com) |
 | Translation | [DeepL API](https://www.deepl.com/pro-api) |
 | AI summaries | [OpenAI GPT-4o-mini](https://platform.openai.com) |
+| Semantic search | OpenAI `text-embedding-3-small` + cosine similarity |
 | Storage | SQLite via aiosqlite |
 | Audio capture | ScreenCaptureKit (Rust) |
 
@@ -148,8 +150,11 @@ System audio → ScreenCaptureKit (Rust, 16kHz PCM)
 On session end:
   → SQLite: save transcript + metadata
   → OpenAI: generate summary in target language + English
-  → SQLite: update with AI-generated fields
+  → OpenAI text-embedding-3-small: embed transcript for semantic search
+  → SQLite: update with AI-generated fields + embedding vector
 ```
+
+Search: query is embedded at runtime → cosine similarity against all stored embeddings → ranked results (no vector DB required)
 
 The app uses two Tauri windows: the control panel (normal window) and the overlay (transparent, always-on-top, click-through). Audio never touches disk — raw PCM bytes stream directly to Deepgram over a WebSocket.
 
@@ -163,8 +168,10 @@ Lingua/
 │   ├── src/
 │   │   ├── components/
 │   │   │   ├── ControlPanel.tsx   # Main UI (tabs, start/stop, live preview)
+│   │   │   ├── Intro.tsx          # Animated splash screen on launch
+│   │   │   ├── SpeakingAvatar.tsx # Idle avatar with multilingual greetings
 │   │   │   ├── Overlay.tsx        # Transparent caption overlay
-│   │   │   ├── History.tsx        # Session history + calendar
+│   │   │   ├── History.tsx        # Session history + calendar + semantic search
 │   │   │   ├── Settings.tsx       # API key configuration
 │   │   │   └── LanguageSelector.tsx
 │   │   ├── store/session.ts       # Zustand state
@@ -183,7 +190,7 @@ Lingua/
         ├── services/
         │   ├── speech/            # Deepgram client
         │   ├── translation/       # DeepL client
-        │   ├── ai/                # OpenAI summarizer
+        │   ├── ai/                # OpenAI summarizer + embedder (RAG)
         │   └── storage/           # SQLite (db.py)
         └── core/config.py         # Settings / env loading
 ```

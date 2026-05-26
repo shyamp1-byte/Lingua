@@ -11,10 +11,15 @@ import {
   PhysicalPosition,
 } from "@tauri-apps/api/window";
 import { register, unregister } from "@tauri-apps/plugin-global-shortcut";
+import Lottie from "lottie-react";
+import type { LottieRefCurrentProps } from "lottie-react";
+import headphoneMicData from "../assets/headphone-mic.json";
 import { useSessionStore } from "../store/session";
 import LanguageSelector from "./LanguageSelector";
 import History from "./History";
 import Settings from "./Settings";
+import { SpeakingAvatar } from "./SpeakingAvatar";
+import { Intro } from "./Intro";
 import type { CaptionEvent } from "../types";
 
 const OVERLAY_POS_KEY = "lingua_overlay_pos";
@@ -36,24 +41,6 @@ const C = {
   rust:      "#934535",
 };
 
-const BAR_COUNT = 9;
-const BAR_DELAYS = Array.from({ length: BAR_COUNT }, (_, i) =>
-  `${(i * 0.09).toFixed(2)}s`
-);
-
-function Waveform({ active }: { active: boolean }) {
-  return (
-    <div style={{ display: "flex", alignItems: "center", gap: 3, height: 28 }}>
-      {BAR_DELAYS.map((delay, i) => (
-        <div
-          key={i}
-          className={active ? "wave-bar wave-bar--active" : "wave-bar"}
-          style={{ animationDelay: delay }}
-        />
-      ))}
-    </div>
-  );
-}
 
 export default function ControlPanel() {
   const { status, caption, partialCaption, detectedLanguage, targetLanguage } =
@@ -64,15 +51,30 @@ export default function ControlPanel() {
   const [showSettings, setShowSettings] = useState(false);
   const [pendingUpdate, setPendingUpdate] = useState<Update | null>(null);
   const [updating, setUpdating] = useState(false);
+  const [showIntro, setShowIntro] = useState(true);
   const overlayMovingRef = useRef(false);
   const captionKey = useRef(0);
   const prevCaption = useRef<string | null>(null);
   const statusRef = useRef(status);
   const targetLanguageRef = useRef(targetLanguage);
+  const headphoneLottieRef = useRef<LottieRefCurrentProps>(null);
 
   useEffect(() => { statusRef.current = status; }, [status]);
   useEffect(() => { targetLanguageRef.current = targetLanguage; }, [targetLanguage]);
   useEffect(() => { overlayMovingRef.current = overlayMoving; }, [overlayMoving]);
+
+  // Headphone→mic: forward on start, reverse on stop
+  useEffect(() => {
+    const l = headphoneLottieRef.current;
+    if (!l) return;
+    if (status === "active") {
+      l.setDirection(1);
+      l.playSegments([0, 119], true);
+    } else {
+      l.setDirection(-1);
+      l.playSegments([119, 0], true);
+    }
+  }, [status]);
 
   const isActive = status === "active";
   const displayText = partialCaption ?? caption?.original ?? null;
@@ -199,6 +201,8 @@ export default function ControlPanel() {
   };
 
   return (
+    <>
+      {showIntro && <Intro onComplete={() => setShowIntro(false)} />}
     <div style={{
       fontFamily: "'Inter', system-ui, -apple-system, sans-serif",
       background: C.bg,
@@ -265,7 +269,13 @@ export default function ControlPanel() {
           </h1>
 
           <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 10 }}>
-            <Waveform active={isActive} />
+            <Lottie
+              lottieRef={headphoneLottieRef}
+              animationData={headphoneMicData}
+              autoplay={false}
+              loop={false}
+              style={{ width: 36, height: 36 }}
+            />
             <button
               onClick={() => setShowSettings((s) => !s)}
               title="Settings"
@@ -470,11 +480,18 @@ export default function ControlPanel() {
                 </p>
               </div>
             )}
+
+            {!isActive && (
+              <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 8, marginBottom: -8 }}>
+                <SpeakingAvatar />
+              </div>
+            )}
           </>
         ) : (
           <History />
         )}
       </div>
     </div>
+    </>
   );
 }

@@ -5,6 +5,7 @@ from fastapi import APIRouter, HTTPException
 
 from app.services.storage import db
 from app.services.ai import summarizer
+from app.services.ai.embedder import embed_text, cosine_similarity
 from app.services.translation.deepl_client import DeepLTranslationService
 from app.core.config import settings
 
@@ -14,6 +15,28 @@ router = APIRouter(prefix="/sessions", tags=["sessions"])
 @router.get("/dates")
 async def session_dates() -> list[str]:
     return await db.get_session_dates()
+
+
+@router.get("/search")
+async def search_sessions(q: str = "") -> list[dict]:
+    if not settings.openai_api_key or not q.strip():
+        return []
+    query_vec = await embed_text(q.strip(), settings.openai_api_key)
+    sessions = await db.get_sessions_with_embeddings()
+    results = []
+    for s in sessions:
+        raw_emb = s.pop("embedding", None)
+        if not raw_emb:
+            continue
+        try:
+            emb = json.loads(raw_emb)
+            score = cosine_similarity(query_vec, emb)
+            s["score"] = round(score, 3)
+            results.append(s)
+        except Exception:
+            continue
+    results.sort(key=lambda x: x["score"], reverse=True)
+    return results[:6]
 
 
 @router.get("")

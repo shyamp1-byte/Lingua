@@ -29,7 +29,7 @@ async def init_db() -> None:
             )
         """)
         # Migrate existing DBs
-        for col in ("transcript_translated TEXT", "title_en TEXT", "summary_en TEXT", "key_points_en TEXT"):
+        for col in ("transcript_translated TEXT", "title_en TEXT", "summary_en TEXT", "key_points_en TEXT", "embedding TEXT"):
             try:
                 await db.execute(f"ALTER TABLE sessions ADD COLUMN {col}")
             except Exception:
@@ -90,6 +90,27 @@ async def get_session(session_id: int) -> dict | None:
         cursor = await db.execute("SELECT * FROM sessions WHERE id = ?", (session_id,))
         row = await cursor.fetchone()
         return _parse(dict(row)) if row else None
+
+
+async def get_sessions_with_embeddings() -> list[dict]:
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute(
+            "SELECT id, started_at, title, summary, key_points, target_language, "
+            "duration_seconds, word_count, embedding "
+            "FROM sessions WHERE embedding IS NOT NULL ORDER BY started_at DESC"
+        )
+        return [_parse(dict(r)) for r in await cursor.fetchall()]
+
+
+async def get_sessions_without_embeddings() -> list[dict]:
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute(
+            "SELECT id, transcript FROM sessions "
+            "WHERE embedding IS NULL AND transcript IS NOT NULL AND transcript != ''"
+        )
+        return [dict(r) for r in await cursor.fetchall()]
 
 
 async def get_session_dates() -> list[str]:
