@@ -144,13 +144,18 @@ jobs:
           VERSION="${{ github.ref_name }}"
           VERSION="${VERSION#v}"   # strip leading 'v'
 
-          SIG_FILE=$(find client/src-tauri/target/release/bundle/macos \
-            -name "*.app.tar.gz.sig" | head -1)
+          # Search broadly — tauri-action may place .sig in various locations
+          SIG_FILE=$(find . -name "*.sig" \
+            ! -path "*/node_modules/*" ! -path "*/.git/*" 2>/dev/null | head -1)
+
+          echo "All .sig files found:"
+          find . -name "*.sig" ! -path "*/node_modules/*" ! -path "*/.git/*" 2>/dev/null || echo "(none)"
 
           if [ -z "$SIG_FILE" ]; then
-            echo "No .sig file found — skipping latest.json upload"
-            exit 0
+            echo "No .sig file found — cannot upload latest.json"
+            exit 1
           fi
+          echo "Using sig: $SIG_FILE"
 
           SIGNATURE=$(cat "$SIG_FILE")
           PUB_DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
