@@ -135,33 +135,45 @@ jobs:
           prerelease: false
 
       # ── Upload latest.json for auto-updater ─────────────────────────────
-      # tauri-action sometimes skips this when projectPath is a subdirectory.
-      # We build and upload it manually to guarantee the updater endpoint works.
+      # tauri-action skips latest.json when projectPath is a subdirectory.
+      # Download the already-uploaded .app.tar.gz, re-sign with our private key,
+      # build latest.json, and upload it ourselves.
       - name: Upload latest.json
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: |
           VERSION="${{ github.ref_name }}"
-          VERSION="${VERSION#v}"   # strip leading 'v'
+          VERSION="${VERSION#v}"
 
-          # Search broadly — tauri-action may place .sig in various locations
-          SIG_FILE=$(find . -name "*.sig" \
-            ! -path "*/node_modules/*" ! -path "*/.git/*" 2>/dev/null | head -1)
+          # Download the .app.tar.gz tauri-action already uploaded to the release
+          mkdir -p /tmp/lingua-release
+          gh release download "${{ github.ref_name }}" \
+            --repo shyamp1-byte/Lingua \
+            --pattern "*.app.tar.gz" \
+            --dir /tmp/lingua-release
 
-          echo "All .sig files found:"
-          find . -name "*.sig" ! -path "*/node_modules/*" ! -path "*/.git/*" 2>/dev/null || echo "(none)"
-
-          if [ -z "$SIG_FILE" ]; then
-            echo "No .sig file found — cannot upload latest.json"
+          TAR_FILE=$(find /tmp/lingua-release -name "*.app.tar.gz" | head -1)
+          if [ -z "$TAR_FILE" ]; then
+            echo "No .app.tar.gz in release assets — build may have failed"
             exit 1
           fi
-          echo "Using sig: $SIG_FILE"
+          echo "Signing: $TAR_FILE"
 
-          SIGNATURE=$(cat "$SIG_FILE")
+          # Sign using the Tauri CLI already installed by tauri-action
+          cd client
+          npx tauri signer sign \
+            -k "$TAURI_SIGNING_PRIVATE_KEY" \
+            -p "$TAURI_SIGNING_PRIVATE_KEY_PASSWORD" \
+            "$TAR_FILE"
+
+          SIGNATURE=$(cat "${TAR_FILE}.sig")
           PUB_DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-          DOWNLOAD_URL="https://github.com/shyamp1-byte/Lingua/releases/download/${{ github.ref_name }}/Lingua_aarch64.app.tar.gz"
+          FILENAME=$(basename "$TAR_FILE")
+          DOWNLOAD_URL="https://github.com/shyamp1-byte/Lingua/releases/download/${{ github.ref_name }}/${FILENAME}"
 
-          cat > latest.json <<EOF
+          cat > /tmp/latest.json <<EOF
           {
             "version": "$VERSION",
             "notes": "",
@@ -175,5 +187,5 @@ jobs:
           }
           EOF
 
-          gh release upload "${{ github.ref_name }}" latest.json \
+          gh release upload "${{ github.ref_name }}" /tmp/latest.json \
             --repo shyamp1-byte/Lingua --clobber
